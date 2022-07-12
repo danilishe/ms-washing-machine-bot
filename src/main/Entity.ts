@@ -1,11 +1,11 @@
 
 
 export interface Machine {
-    watchers?: NodeJS.Timeout[];
+    id: string,
+    name: string;
     usedBy?: UsedBy;
     status: Status;
     changedBy?: number;
-    name: string;
     type: MachineType;
 }
 

@@ -1,5 +1,5 @@
 import { Markup } from "telegraf";
-import { dryers, getUserById, washers } from "./state";
+import { getDryers, getUserById, getWashers } from "./state";
 import { ACTION, Machine, Status, toString, User } from "./Entity";
 import { ExtraReplyMessage } from "telegraf/typings/telegram-types";
 
@@ -8,13 +8,13 @@ export interface View {
     config: any;
 }
 
-export const statusView = (queue: number[], currentUserId: number) => {
+export const statusView = async (queue: number[], currentUserId: number) => {
     const currentUserPos = queue.indexOf(currentUserId) + 1;
     return ({
         message: "Select machine to see additional data.\n The current status is:",
         extra: Markup.inlineKeyboard([
-            [...dryers.map(d => Markup.button.callback(buttonLabel(d), ACTION.showMachine + d.name))],
-            [...washers.map(w => Markup.button.callback(buttonLabel(w), ACTION.showMachine + w.name))],
+            [...(await getDryers()).map(d => Markup.button.callback(buttonLabel(d), ACTION.showMachine + d.name))],
+            [...(await getWashers()).map(w => Markup.button.callback(buttonLabel(w), ACTION.showMachine + w.name))],
             [Markup.button.callback(
                 `👥 Queue (${queue.length > 0 ? queue.length : 'empty'}), you are `
                 + (currentUserPos > 0 ? "#" + currentUserPos : "not in queue")
