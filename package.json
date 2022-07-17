@@ -5,7 +5,7 @@
   "main": "src/index.ts.js",
   "scripts": {
     "run": "ts-node src/main/main.ts",
-    "watch": " ts-node --esm src/main/main.ts"
+    "init": "ts-node src/initMachines.ts"
   },
   "author": "danilishe",
   "license": "ISC",

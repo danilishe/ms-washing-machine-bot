@@ -1,5 +1,5 @@
 import { Telegraf } from 'telegraf'
-import { confirmFinishView, machineView, parseAsHtml, queueView, statusView } from "./view";
+import { confirmFinishView, machineView, queueView, statusView } from "./view";
 import {
     addToQueue,
     collectUserData,
@@ -9,7 +9,8 @@ import {
     hasFree,
     isInQueue,
     postponeQueue,
-    removeFromQueue
+    removeFromQueue,
+    updateMachine
 } from "./state";
 import { ACTION, Machine, MachineType, Status } from "./Entity";
 
@@ -30,7 +31,7 @@ bot.catch((err, ctx) => {
 })
 
 bot.command("start", async (ctx) => {
-    collectUserData(ctx);
+    await collectUserData(ctx);
     const view = await statusView(getQueue(), ctx.from.id);
     ctx.reply(view.message, view.extra);
 });
@@ -47,7 +48,7 @@ bot.action(/.*/, (ctx, next) => {
 });
 
 async function backToMachine(ctx, machine: Machine) {
-    const view = machineView(machine, ctx.from.id);
+    const view = await machineView(machine, ctx.from.id);
     return ctx.editMessageText(view.message, view.config);
 }
 
@@ -56,8 +57,8 @@ const backToStatus = async (ctx) => {
     ctx.editMessageText(view.message, view.extra);
 };
 
-function backToQueue(ctx) {
-    const view = queueView(getQueue(), ctx.from.id);
+async function backToQueue(ctx) {
+    const view = await queueView(getQueue(), ctx.from.id);
     ctx.editMessageText(view.message, view.config);
 }
 
@@ -67,15 +68,19 @@ bot.action(showMachineState, async (ctx) => backToMachine(ctx, await getMachineB
 
 bot.action(useMachine, async (ctx) => {
     const userId = ctx.from.id;
-    const machine = await getMachineById(ctx.match[1]);
     const timeout: number = parseInt(ctx.match[2]);
-    machine.usedBy = {
-        userId: userId,
-        previousUser: machine.usedBy?.previousUser,
-        start: new Date(),
-        timeoutMin: timeout,
+    const machine = await getMachineById(ctx.match[1]);
+    const update = {
+        ...machine,
+        status: Status.BUSY,
+        usedBy: {
+            userId: userId,
+            previousUser: machine.usedBy?.previousUser,
+            start: new Date(),
+            timeoutMin: timeout,
+        }
     };
-    machine.status = Status.BUSY;
+    await updateMachine(update);
     // setWatcher(machine, setTimeout(() => {
     //     notifyUser(userId, `Your program on <b>${machine.name}</b> should be finished. Please take your things. Machine will be released automatically.`);
     //     cancelWatchers(machine);
@@ -87,9 +92,9 @@ bot.action(useMachine, async (ctx) => {
     //     };
     //     machine.status = Status.FREE;
     // }, timeout * 60_000))
-    removeFromQueue(userId);
-    ctx.answerCbQuery(`Now you are using ${machine.name}`);
-    await backToMachine(ctx, machine);
+    await removeFromQueue(userId);
+    await ctx.answerCbQuery(`Now you are using ${machine.name}`);
+    return await backToMachine(ctx, update);
 })
 
 bot.action(releaseMachine, async (ctx) => {
@@ -139,7 +144,7 @@ bot.action(machineReportInUse, async (ctx) => {
         //     cancelWatchers(machine);
         // }, timeout * 60_000));
         ctx.answerCbQuery(`Thanks for report!`);
-        backToMachine(ctx, machine);
+        await backToMachine(ctx, machine);
     }
 );
 
@@ -162,7 +167,7 @@ bot.action(machineReportIsBroken, async (ctx) => {
         machine.changedBy = currentUserId;
         // cancelWatchers(machine);
         ctx.answerCbQuery(`Thanks for report!`);
-        backToMachine(ctx, machine);
+        await backToMachine(ctx, machine);
     }
 );
 
@@ -181,7 +186,7 @@ bot.action(machineReportIsOk, async (ctx) => {
         machine.changedBy = userId;
         machine.status = Status.FREE;
         ctx.answerCbQuery(`Thanks for report!`);
-        backToMachine(ctx, machine);
+        await backToMachine(ctx, machine);
     }
 );
 

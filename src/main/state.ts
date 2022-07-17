@@ -1,5 +1,4 @@
-import { Machine, MachineType, Status, toString, User } from "./Entity";
-import * as fs from "fs";
+import { Machine, MachineType, Status, UsedBy, User } from "./Entity";
 import { cert, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -10,13 +9,29 @@ initializeApp({
 });
 
 const db = getFirestore();
+db.settings({ ignoreUndefinedProperties: true });
+
 const machineConverter = {
     toFirestore(machine: Machine): FirebaseFirestore.DocumentData {
-        return { name: machine.name, status: machine.status };
+        return {
+            name: machine.name,
+            status: machine.status,
+            type: machine.type,
+            id: machine.id,
+            usedBy: machine.usedBy,
+            changedBy: machine.changedBy,
+        } as Machine;
     },
     fromFirestore(snapshot: FirebaseFirestore.QueryDocumentSnapshot): Machine {
         const data = snapshot.data();
-        return { id: data.id, name: data.name, status: data.status, type: data.type };
+        return {
+            id: data.id,
+            name: data.name,
+            status: data.status,
+            type: data.type,
+            usedBy: data.usedBy,
+            changedBy: data.changedBy,
+        };
     }
 };
 const userConverter = {
@@ -44,6 +59,10 @@ export async function getMachineById(id: string): Promise<Machine> {
         .then(doc => doc.data());
 }
 
+export async function updateMachine(machine: Machine) {
+    return await machinesDb.doc(machine.id).set(machine);
+}
+
 export async function getUserById(userId: number): Promise<User> {
     return usersDb.doc(String(userId)).get().then(d => d.data());
 }
@@ -51,7 +70,7 @@ export async function getUserById(userId: number): Promise<User> {
 export async function collectUserData(ctx) {
     const from = ctx.from;
     const userName = from.username || from.first_name + " " + from.last_name || "noname";
-    await usersDb.doc(from.id).set({ name: userName, id: from.id, chatId: ctx.chat.id });
+    await usersDb.doc(String(from.id)).set({ name: userName, id: from.id, chatId: ctx.chat.id });
 }
 
 export function isInQueue(id: number): boolean {

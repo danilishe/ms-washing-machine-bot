@@ -3,10 +3,10 @@
 export interface Machine {
     id: string,
     name: string;
-    usedBy?: UsedBy;
-    status: Status;
-    changedBy?: number;
     type: MachineType;
+    status: Status;
+    usedBy?: UsedBy;
+    changedBy?: number;
 }
 
 export const ACTION = {

@@ -9,4 +9,6 @@ const machines: Machine[] = [
     { id: "Dryer 2", name: "Dryer 2", status: Status.FREE, type: MachineType.DRYER_MACHINE },
     { id: "Dryer 3", name: "Dryer 3", status: Status.FREE, type: MachineType.DRYER_MACHINE },
 ];
-machines.forEach(m => machinesDb.doc(m.name).set(m));
+console.log("adding...")
+machines.forEach(m => machinesDb.doc(m.id).set(m));
+console.log("done.")

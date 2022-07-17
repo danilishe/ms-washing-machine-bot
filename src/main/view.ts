@@ -1,7 +1,7 @@
 import { Markup } from "telegraf";
-import { getDryers, getUserById, getWashers } from "./state";
-import { ACTION, Machine, Status, toString, User } from "./Entity";
+import { ACTION, Machine, MachineType, Status, toString, User } from "./Entity";
 import { ExtraReplyMessage } from "telegraf/typings/telegram-types";
+import { getMachines, getUserById } from "./state";
 
 export interface View {
     message: string,
@@ -13,8 +13,10 @@ export const statusView = async (queue: number[], currentUserId: number) => {
     return ({
         message: "Select machine to see additional data.\n The current status is:",
         extra: Markup.inlineKeyboard([
-            [...(await getDryers()).map(d => Markup.button.callback(buttonLabel(d), ACTION.showMachine + d.name))],
-            [...(await getWashers()).map(w => Markup.button.callback(buttonLabel(w), ACTION.showMachine + w.name))],
+            [...(await getMachines(MachineType.DRYER_MACHINE))
+                .map(d => Markup.button.callback(buttonLabel(d), ACTION.showMachine + d.name))],
+            [...(await getMachines(MachineType.WASHING_MACHINE))
+                .map(w => Markup.button.callback(buttonLabel(w), ACTION.showMachine + w.name))],
             [Markup.button.callback(
                 `👥 Queue (${queue.length > 0 ? queue.length : 'empty'}), you are `
                 + (currentUserPos > 0 ? "#" + currentUserPos : "not in queue")
@@ -134,22 +136,22 @@ function getAvailableActions(machine: Machine, userId: number) {
                     Markup.button.callback('150 min', useMachineAction(machine.name, 150)),
                 ],
                 [
-                    Markup.button.callback('⚠️ In use for 20', isUsed(machine.name, 20)),
+                    Markup.button.callback('⚠ In use for 20', isUsed(machine.name, 20)),
                     Markup.button.callback('30', isUsed(machine.name, 30)),
                     Markup.button.callback('50', isUsed(machine.name, 50)),
                     Markup.button.callback('70', isUsed(machine.name, 70)),
                     Markup.button.callback('90 min', isUsed(machine.name, 90)),
                 ],
                 [
-                    Markup.button.callback('💀️ Report is broken', ACTION.reportIsBroken + machine.name),
+                    Markup.button.callback('💀 Report is broken', ACTION.reportIsBroken + machine.name),
                 ]
             ];
         case Status.BUSY:
             return [...commonButtons,
                 [
                     usedByCurrentUser
-                        ? Markup.button.callback('⏏️ Release ', ACTION.releaseMachine + machine.name)
-                        : Markup.button.callback('🔔️ Report is finished ', ACTION.reportIsFinished + machine.name),
+                        ? Markup.button.callback('⏏ Release ', ACTION.releaseMachine + machine.name)
+                        : Markup.button.callback('🔔 Report is finished ', ACTION.reportIsFinished + machine.name),
                 ]
             ];
         case Status.NOT_WORKING:
@@ -162,11 +164,11 @@ function getAvailableActions(machine: Machine, userId: number) {
 
 }
 
-export const machineView = (machine: Machine, userId: number): View => {
+export const machineView = async (machine: Machine, userId: number): Promise<View> => {
     return {
         message: `Machine <b>${machine.name}</b> page
                 It is <b>${toString(machine.status) + machine.status}</b> now
-                ${getStatusInfo(machine, userId)}`,
+                ${await getStatusInfo(machine, userId)}`,
         config: {
             ...parseAsHtml,
             ...Markup.inlineKeyboard(getAvailableActions(machine, userId))
@@ -174,22 +176,22 @@ export const machineView = (machine: Machine, userId: number): View => {
     };
 }
 
-function youOrLink(userId: number, currentUserId: number): string {
-    return getUserLink(getUserById(userId)) + (userId === currentUserId
+async function youOrLink(userId: number, currentUserId: number): Promise<string> {
+    return getUserLink(await getUserById(userId)) + (userId === currentUserId
         ? "(You)"
         : "");
 }
 
-function getStatusInfo(machine: Machine, userId: number): string {
+async function getStatusInfo(machine: Machine, userId: number): Promise<string> {
     switch (machine.status) {
         case Status.NOT_WORKING:
             return `Status: <b>Not working</b> 
-reported by: ${youOrLink(machine.changedBy, userId)}`;
+reported by: ${await youOrLink(machine.changedBy, userId)}`;
         case Status.BUSY:
             const endDate = getEndDate(machine.usedBy.start, machine.usedBy.timeoutMin);
-            return `Used by ${youOrLink(machine.usedBy?.userId, userId)} until 📅 ${formatDateHHMM(endDate)}`;
+            return `Used by ${await youOrLink(machine.usedBy?.userId, userId)} until 📅 ${formatDateHHMM(endDate)}`;
         case Status.FREE:
             return `Should be free now.
-            Last used by ${youOrLink(machine.usedBy?.previousUser, userId)}`
+            Last used by ${await youOrLink(machine.usedBy?.previousUser, userId)}`
     }
 }
