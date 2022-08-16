@@ -1,18 +1,7 @@
 import { Telegraf } from 'telegraf'
-import { confirmFinishView, machineView, queueView, statusView } from "./view";
-import {
-    addToQueue,
-    collectUserData,
-    getMachineById,
-    getQueue,
-    getUserById,
-    hasFree,
-    isInQueue,
-    postponeQueue,
-    removeFromQueue,
-    updateMachine
-} from "./state";
-import { ACTION, Machine, MachineType, Status } from "./Entity";
+import { confirmFinishView, getUserLink, machineView, parseAsHtml, statusView } from "./view";
+import { collectUserData, getMachineById, getQueue, getUserById, updateMachine } from "./state";
+import { ACTION, Machine, Status } from "./Entity";
 
 const bot = new Telegraf(process.env.API_KEY);
 
@@ -52,15 +41,15 @@ async function backToMachine(ctx, machine: Machine) {
     return ctx.editMessageText(view.message, view.config);
 }
 
-const backToStatus = async (ctx) => {
+async function backToStatus(ctx) {
     const view = await statusView(getQueue(), ctx.from.id);
-    ctx.editMessageText(view.message, view.extra);
-};
+    return ctx.editMessageText(view.message, view.extra);
+}
 
-async function backToQueue(ctx) {
+/*async function backToQueue(ctx) {
     const view = await queueView(getQueue(), ctx.from.id);
     ctx.editMessageText(view.message, view.config);
-}
+}*/
 
 bot.action(ACTION.showStatus, backToStatus);
 
@@ -80,7 +69,11 @@ bot.action(useMachine, async (ctx) => {
             timeoutMin: timeout,
         }
     };
-    await updateMachine(update);
+    return Promise.all([
+        updateMachine(update),
+        ctx.answerCbQuery(`Now you are using ${machine.name}`),
+        backToMachine(ctx, update),
+    ])
     // setWatcher(machine, setTimeout(() => {
     //     notifyUser(userId, `Your program on <b>${machine.name}</b> should be finished. Please take your things. Machine will be released automatically.`);
     //     cancelWatchers(machine);
@@ -92,29 +85,31 @@ bot.action(useMachine, async (ctx) => {
     //     };
     //     machine.status = Status.FREE;
     // }, timeout * 60_000))
-    await removeFromQueue(userId);
-    await ctx.answerCbQuery(`Now you are using ${machine.name}`);
-    return await backToMachine(ctx, update);
+    // await removeFromQueue(userId);
 })
 
 bot.action(releaseMachine, async (ctx) => {
     const userId = ctx.from.id;
     const machine = await getMachineById(ctx.match[1]);
-    if (userId !== machine.usedBy.userId) {
+    if (userId !== machine.usedBy?.userId) {
         ctx.answerCbQuery(`You don't use ${machine.name}. Nothing changed.`);
-        return await backToMachine(ctx, machine);
+        return backToMachine(ctx, machine);
     }
-
-    machine.usedBy = {
-        userId: undefined,
-        previousUser: userId,
-        start: new Date(),
-        timeoutMin: 0,
-    };
-    machine.status = Status.FREE;
-    // cancelWatchers(machine);
-    ctx.answerCbQuery(`You have released ${machine.name}`);
-    await backToMachine(ctx, machine);
+    const update = {
+        ...machine,
+        usedBy: {
+            userId: undefined,
+            previousUser: userId,
+            start: new Date(),
+            timeoutMin: 0,
+        },
+        status: Status.FREE
+    }
+    return Promise.all([
+        updateMachine(update).then(_ => backToStatus(ctx)),
+        ctx.answerCbQuery(`You have released ${update.name}`),
+        // cancelWatchers(machine);
+    ])
 })
 
 // function cancelWatchers(machine: Machine) {
@@ -132,19 +127,25 @@ bot.action(releaseMachine, async (ctx) => {
 bot.action(machineReportInUse, async (ctx) => {
         const machine = await getMachineById(ctx.match[1]);
         const timeout: number = parseInt(ctx.match[2]);
-        machine.usedBy = {
-            userId: undefined,
-            start: new Date(),
-            timeoutMin: timeout,
-        };
-        machine.status = Status.BUSY;
-        machine.changedBy = ctx.from.id;
-        // setWatcher(machine, setTimeout(() => {
-        //     machine.status = Status.FREE;
-        //     cancelWatchers(machine);
-        // }, timeout * 60_000));
-        ctx.answerCbQuery(`Thanks for report!`);
-        await backToMachine(ctx, machine);
+        const update = {
+            ...machine,
+            usedBy: {
+                userId: undefined,
+                start: new Date(),
+                timeoutMin: timeout,
+            },
+            status: Status.BUSY,
+            changedBy: ctx.from.id,
+        }
+        return Promise.all([
+            updateMachine(update),
+            ctx.answerCbQuery(`Thanks for report!`),
+            backToMachine(ctx, update),
+            // setWatcher(machine, setTimeout(() => {
+            //     machine.status = Status.FREE;
+            //     cancelWatchers(machine);
+            // }, timeout * 60_000));          
+        ])
     }
 );
 
@@ -157,61 +158,79 @@ bot.action(machineReportIsBroken, async (ctx) => {
         //         `User ${getUserLink(getUserById(currentUserId))} informs, that machine <b>${machine}</b> you have been using, is broken.
         //             Please take your things`);
         // }
-        machine.usedBy = {
-            userId: undefined,
-            previousUser: usedById,
-            start: new Date(),
-            timeoutMin: 9999999,
+        const update = {
+            ...machine,
+            usedBy: {
+                userId: undefined,
+                previousUser: usedById,
+                start: new Date(),
+                timeoutMin: 9999999,
+            },
+            status: Status.NOT_WORKING,
+            changedBy: currentUserId,
         };
-        machine.status = Status.NOT_WORKING;
-        machine.changedBy = currentUserId;
-        // cancelWatchers(machine);
-        ctx.answerCbQuery(`Thanks for report!`);
-        await backToMachine(ctx, machine);
+        return Promise.all([
+            updateMachine(update).then(_ => backToStatus(ctx)),
+            ctx.answerCbQuery(`Thanks for report!`),
+            /* cancelWatchers(machine); */
+        ])
     }
 );
 
 
 bot.action(machineReportIsOk, async (ctx) => {
-        const userId = ctx.from.id;
+        const user = await getUserById(ctx.from.id);
         const machine = await getMachineById(ctx.match[1]);
-        // if (machine.changedBy && userId !== machine.changedBy) {
-        //     notifyUser(machine.changedBy, `${getUserLink(getUserById(userId))} reports that machine <b>${machine.name}</b> you marked as broken, is fixed now`);
-        // }
-        machine.usedBy = {
-            userId: undefined,
-            start: new Date(),
-            timeoutMin: 0
+        if (machine.changedBy && user.id !== machine.changedBy) {
+            await notifyUser(machine.changedBy, `${getUserLink(user)} reports that machine <b>${machine.name}</b> you marked as broken, is ok now`);
+        }
+        const update = {
+            ...machine,
+            usedBy: {
+                userId: undefined,
+                start: new Date(),
+                timeoutMin: 0
+            },
+            changedBy: user.id,
+            status: Status.FREE,
         };
-        machine.changedBy = userId;
-        machine.status = Status.FREE;
-        ctx.answerCbQuery(`Thanks for report!`);
-        await backToMachine(ctx, machine);
+        return Promise.all([
+            updateMachine(update),
+            ctx.answerCbQuery(`Thanks for report!`),
+            backToMachine(ctx, update),
+        ])
     }
 );
 
 bot.action(machineReportFinished, async (ctx) => {
         const machine = await getMachineById(ctx.match[1]);
         const view = confirmFinishView(machine);
-        ctx.editMessageText(view.message, view.config);
+        return ctx.editMessageText(view.message, view.config);
     }
 );
 
 bot.action(machineConfirmFinished, async (ctx) => {
         const machine = await getMachineById(ctx.match[1]);
         const user = await getUserById(ctx.from.id);
-        // notifyUser(machine.usedBy.userId, `${getUserLink(user)} wants to inform you, that ${machine.name} has finished its work`);
-        machine.usedBy = {
-            userId: undefined,
-            start: new Date(),
-            timeoutMin: 0
-        };
         // cancelWatchers(machine);
-        machine.status = Status.FREE;
-        machine.changedBy = user.id;
-        await backToMachine(ctx, machine);
+        const update = {
+            ...machine,
+            status: Status.FREE,
+            changedBy: user.id,
+            usedBy: {
+                userId: undefined,
+                start: new Date(),
+                timeoutMin: 0
+            }
+        };
+        return Promise.all([
+            notifyUser(machine.usedBy.userId, `${getUserLink(user)} wants to inform you, that ${machine.name} has finished its work`),
+            updateMachine(update),
+            backToMachine(ctx, update),
+        ]);
     }
 );
+/*
 
 bot.action(ACTION.standToQueue, async (ctx) => {
     if (await hasFree(MachineType.WASHING_MACHINE)) {
@@ -222,32 +241,37 @@ bot.action(ACTION.standToQueue, async (ctx) => {
     }
     addToQueue(ctx.from.id);
     ctx.answerCbQuery(`Queued!`);
-    backToQueue(ctx);
+    await backToQueue(ctx);
 })
+*/
+
+/*
 
 bot.action(ACTION.showQueue, backToQueue);
 
 bot.action(ACTION.leaveQueue, async (ctx) => {
     removeFromQueue(ctx.from.id);
     ctx.answerCbQuery(`You were removed from queue!`);
-    backToQueue(ctx);
+    return backToQueue(ctx);
 })
 
 bot.action(ACTION.postponeQueue, async (ctx) => {
-    postponeQueue();
-    backToQueue(ctx);
-    ctx.answerCbQuery("Your turn is postponed");
+    postponeQueue(); // todo: does not work
+    return Promise.all([
+        backToQueue(ctx),
+        ctx.answerCbQuery("Your turn is postponed"),
+    ]);
 });
+*/
 
-// function notifyUser(userId: number, s: string, config?) {
-//     const user = getUserById(userId);
-//     console.log(`notify user ${user}: ${s}`);
-//     try {
-//         bot.telegram.sendMessage(user.chatId, s, config || parseAsHtml);
-//     } catch (e) {
-//         console.error(e);
-//     }
-// }
+async function notifyUser(userId: number, s: string, config?) {
+    const user = await getUserById(userId);
+    try {
+        await bot.telegram.sendMessage(user.chatId, s, config || parseAsHtml);
+    } catch (e) {
+        console.error(e);
+    }
+}
 
 bot.launch()
 

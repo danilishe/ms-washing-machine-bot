@@ -8,8 +8,8 @@ export interface View {
     config: any;
 }
 
-export const statusView = async (queue: number[], currentUserId: number) => {
-    const currentUserPos = queue.indexOf(currentUserId) + 1;
+export async function statusView(queue: number[], currentUserId: number) {
+    // const currentUserPos = queue.indexOf(currentUserId) + 1;
     return ({
         message: "Select machine to see additional data.\n The current status is:",
         extra: Markup.inlineKeyboard([
@@ -17,13 +17,13 @@ export const statusView = async (queue: number[], currentUserId: number) => {
                 .map(d => Markup.button.callback(buttonLabel(d), ACTION.showMachine + d.name))],
             [...(await getMachines(MachineType.WASHING_MACHINE))
                 .map(w => Markup.button.callback(buttonLabel(w), ACTION.showMachine + w.name))],
-            [Markup.button.callback(
-                `👥 Queue (${queue.length > 0 ? queue.length : 'empty'}), you are `
-                + (currentUserPos > 0 ? "#" + currentUserPos : "not in queue")
-                , ACTION.showQueue)],
+            // [Markup.button.callback( // todo: queue is switched off
+            //     `👥 Queue (${queue.length > 0 ? queue.length : 'empty'}), you are `
+            //     + (currentUserPos > 0 ? "#" + currentUserPos : "not in queue")
+            //     , ACTION.showQueue)],
         ])
     });
-};
+}
 
 export function getUserLink(user: User) {
     if (user) {
