@@ -14,6 +14,12 @@ const machineReportIsOk = new RegExp(ACTION.reportIsOk + "(.+)");
 const machineReportFinished = new RegExp(ACTION.reportIsFinished + "(.+)");
 const machineConfirmFinished = new RegExp(ACTION.confirmIsFinished + "(.+)");
 
+// todo: remove queue: only single user
+// remove extra buttons from views
+// deploy alert server, which will inform about end
+// deploy to fire functions bot
+// add queue as alert service when machine is free
+// you done
 bot.catch((err, ctx) => {
     console.log("Error happened during update: ", ctx.update);
     console.error("Error:", err);
